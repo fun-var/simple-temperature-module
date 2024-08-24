@@ -1,52 +1,57 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/fs.h>
+#include <linux/sched.h>
+#include <linux/mm.h>
+#include <linux/thermal.h>
 #include <linux/uaccess.h>
 #include <linux/kernel.h>
 
-#define MODULE_NAME "greeter"
+#define MODULE_NAME "temperature"
 MODULE_AUTHOR("fun-var");
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("A simple kernel module to display CPU temperature");
 MODULE_VERSION("0.1");
 
-static char *name = "Var-temp";
-module_param(name, charp, S_IRUGO);
-MODULE_PARM_DESC(name, "The name to display in /var/log/kern.log");
+char zone_name[] = "x86_pkg_temp";
 
 static int __init greeter_init(void)
 {
-    struct file *file;
-    char buf[16];
-    mm_segment_t oldfs;
-    int temp;
-
-    file = filp_open("/sys/class/thermal/thermal_zone0/temp", O_RDONLY, 0);
-    if (IS_ERR(file)) {
-        pr_err("%s: Failed to open temperature file\n", MODULE_NAME);
-        return PTR_ERR(file);
+    struct thermal_zone_device *thermal_zone;
+    thermal_zone = thermal_zone_get_zone_by_name(zone_name);
+    if (IS_ERR(thermal_zone)) {
+        pr_err("Failed to get thermal zone 0\n");
+        return -ENODEV;
     }
 
-    oldfs = get_fs();
-    set_fs(KERNEL_DS);
+    if (!thermal_zone->ops) {
+        pr_err("Thermal zone NONE\n");
+        return -1;
+    }
 
-    vfs_read(file, buf, sizeof(buf) - 1, &file->f_pos);
-    buf[sizeof(buf) - 1] = '\0'; 
+    if(thermal_zone->ops->get_temp) 
+        pr_info("Get temp is defined");
 
-    set_fs(oldfs);
-    filp_close(file, NULL);
+    int temp, ret;
 
-    temp = simple_strtol(buf, NULL, 10);
+    ret = thermal_zone_get_temp(thermal_zone, &temp);
+    if (ret) {
+        pr_err("Failed to read temperature for zone: %s\n", zone_name);
+        return ret;
+    }
+
+    // Температура возвращается в тысячных долях градуса Цельсия
+    pr_info("Temperature of zone %s: %d.%03d°C\n",
+            zone_name, temp / 1000, temp % 1000);
 
     pr_info("%s: module loaded at 0x%p\n", MODULE_NAME, greeter_init);
-    pr_info("%s: greetings %s, CPU temperature is %d.%03d°C\n", MODULE_NAME, name, temp / 1000, temp % 1000);
+    
 
     return 0;
 }
 
 static void __exit greeter_exit(void)
 {
-    pr_info("%s: goodbye %s\n", MODULE_NAME, name);
     pr_info("%s: module unloaded from 0x%p\n", MODULE_NAME, greeter_exit);
 }
 
