@@ -34,5 +34,5 @@ function(compile_module obj)
 		     )
 endfunction()
 
-compile_module(test)
+compile_module(temp_module)
 # Call compilation function
